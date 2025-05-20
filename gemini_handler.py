@@ -8,14 +8,13 @@ from google.genai import types
 from typing import Union
 from google.genai.types import FinishReason
 
-from system_prompt_tool_calling import sys_promp_tool_calling
+from Prompts.system_prompt_tool_calling import sys_promp_tool_calling
 
 import sys
 import inspect  # for finding functions
 import types as py_types  # to avoid conflict with `google.genai.types`
 import importlib # for dynamic import
 #  importlib.reload(config_module)  # This reloads the module from disk
-
 
 
 # Tips for Writing Effective Docstrings (usefull for automatic tool for gemini)

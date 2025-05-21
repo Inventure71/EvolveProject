@@ -3,6 +3,7 @@
 __pycache__/
 tools/__pycache__/
 test.py
+file_edit_debug/
 .idea/
 .idea
 .venv

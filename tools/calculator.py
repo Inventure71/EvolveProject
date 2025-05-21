@@ -8,8 +8,9 @@ def calculator(operation: str, number1: int, number2: int) -> Union[float, str]:
         number1: The first number to operate on.
         number2: The second number to operate on.
 
-    Returns:
-        A float containing the result of the operation.
+11:
+12:     Returns:
+12.1:         A float containing the result of the operation or an error message.
     """
 
     if operation == "add":
@@ -22,7 +23,6 @@ def calculator(operation: str, number1: int, number2: int) -> Union[float, str]:
         result = number1 / number2
     else:
         result = "Invalid operation"
-
     print(result)
     
     return {"result:": result}

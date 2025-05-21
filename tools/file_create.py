@@ -12,7 +12,6 @@ def create_file(file_path: str, content: str) -> str:
     Returns:
         A string message indicating success or the error encountered.
     """
-    print(f"[DEBUG] create_file called for: {file_path}")
     try:
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, 'w', encoding='utf-8') as f:

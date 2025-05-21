@@ -9,6 +9,7 @@ from typing import Union
 from google.genai.types import FinishReason
 
 from Prompts.system_prompt_tool_calling import sys_promp_tool_calling
+from Prompts.system_prompt_main import prompt_main
 
 import sys
 import inspect  # for finding functions
@@ -39,6 +40,7 @@ class GeminiHandler:
 
         self.tools_functions = []
         self.reload_tools()
+        self.history = []  # Store last 5 model responses
 
     def reload_tools(self):
         tools_functions = []
@@ -120,56 +122,103 @@ class GeminiHandler:
                     print(f"\n❌ {error_type.capitalize()} error after {retry_count} retries: {e}")
                     raise
    
+    def _add_to_history(self, entry):
+        self.history.append(entry)
+        if len(self.history) > 5:
+            self.history = self.history[-5:]
+
+    def _extract_text_from_candidate(self, candidate):
+        # Extract all text parts from the candidate
+        if hasattr(candidate, 'content'):
+            parts = candidate.content.parts
+        else:
+            parts = candidate.parts
+        return "".join([p.text for p in parts if hasattr(p, 'text') and p.text])
+
+    def _extract_function_calls(self, candidate):
+        # Return all function_call parts from the candidate
+        if hasattr(candidate, 'content'):
+            parts = candidate.content.parts
+        else:
+            parts = candidate.parts
+        return [p for p in parts if hasattr(p, 'function_call') and p.function_call]
+
+    def _run_tool(self, function_call):
+        # Find the function by name
+        func_name = function_call.name
+        args = function_call.args or {}
+        for func in self.tools_functions:
+            if func.__name__ == func_name:
+                try:
+                    result = func(**args)
+                    return str(result)
+                except Exception as e:
+                    return f"Tool '{func_name}' failed: {e}"
+        return f"Tool '{func_name}' not found."
+
     def solve_task(self, prompt, model="gemini-2.0-flash"):
         print("Generating response to: ", prompt, "\n...")
-
-        while True:
-
-            contents = [
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_text(text=prompt),
-                    ],
-                ),
-            ]
-
-            tool_config = types.ToolConfig(
-            #function_calling_config=types.FunctionCallingConfig(
-            #        mode="ANY", 
-            #        allowed_function_names=["calculator"]
-            #    )
-            )
-            
+        conversation = []
+        finished = False
+        while not finished:
+            # Compose contents from conversation history
+            contents = []
+            for entry in conversation:
+                if entry['role'] == 'user':
+                    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=entry['content'])]))
+                elif entry['role'] == 'model':
+                    # Model response may be text or tool result
+                    contents.append(types.Content(role="model", parts=[types.Part.from_text(text=entry['content'])]))
+            if not conversation:
+                contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
 
             generate_content_config = types.GenerateContentConfig(
                 stop_sequences=[
                     """!FINISHED_TASK!""",
                 ],
                 tools=self.tools_functions,
-                #response_mime_type="text/plain",
-                #tool_config=tool_config,
                 system_instruction=[
-                    types.Part.from_text(text=sys_promp_tool_calling),
+                    types.Part.from_text(text=prompt_main),
                 ],
             )
 
             response = self.generate(model, contents, generate_content_config)
+            candidate = response.candidates[0]
+            finish_reason = candidate.finish_reason
+            text = self._extract_text_from_candidate(candidate)
+            function_calls = self._extract_function_calls(candidate)
 
-            print(response.text)
-            #if response.candidates[0].finish_reason == FinishReason.STOP:
-            print(response.candidates[0].finish_reason.value)
+            if function_calls:
+                # There may be multiple tool calls in one response
+                tool_results = []
+                for fc in function_calls:
+                    tool_result = self._run_tool(fc.function_call)
+                    tool_results.append(f"Tool call: {fc.function_call.name}({fc.function_call.args})\nResult: {tool_result}")
+                # Combine tool call and model follow-up as one history entry
+                combined = (text + "\n" if text else "") + "\n".join(tool_results)
+                print(combined)
+                conversation.append({'role': 'model', 'content': combined})
+                self._add_to_history(combined)
+            else:
+                print(text)
+                conversation.append({'role': 'model', 'content': text})
+                self._add_to_history(text)
 
-            if response.candidates[0].finish_reason == FinishReason.STOP:
-                break
-
-            time.sleep(0.5)
+            if finish_reason == FinishReason.STOP or (text and "!FINISHED_TASK!" in text):
+                finished = True
+            else:
+                # Continue the loop, possibly after a short delay
+                time.sleep(0.5)
 
         print("Finished")
+        print("\n--- Last 5 model responses (history) ---")
+        for idx, h in enumerate(self.history, 1):
+            print(f"[{idx}] {h}\n")
             
 
 if __name__ == "__main__":
     #generate("Repeat !FINISHED_TASK!")
     gemini_handler = GeminiHandler()
     #gemini_handler.solve_task("Calculate 5 * 4, then add 3 to the result. Use tools i don't want you to calculate alone.")
-    gemini_handler.solve_task("You want to create a memory system for yourself. This is a one shot operation so you can't talk to anybody to ask confirmation")
+    #gemini_handler.solve_task("You want to create a memory system for yourself. This is a one shot operation so you can't talk to anybody to ask confirmation")
+    gemini_handler.solve_task("You are now alive")
